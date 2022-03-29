@@ -5,16 +5,13 @@ Object.defineProperty(exports, '__esModule', { value: true });
 var bigInt = require('big-integer');
 var crypto = require('crypto');
 var wasmcurves = require('wasmcurves');
-var os = require('os');
-var Worker = require('web-worker');
+require('os');
 var wasmbuilder = require('wasmbuilder');
 
 function _interopDefaultLegacy (e) { return e && typeof e === 'object' && 'default' in e ? e : { 'default': e }; }
 
 var bigInt__default = /*#__PURE__*/_interopDefaultLegacy(bigInt);
 var crypto__default = /*#__PURE__*/_interopDefaultLegacy(crypto);
-var os__default = /*#__PURE__*/_interopDefaultLegacy(os);
-var Worker__default = /*#__PURE__*/_interopDefaultLegacy(Worker);
 
 /* global BigInt */
 const hexLen = [ 0, 1, 2, 2, 3, 3, 3, 3, 4 ,4 ,4 ,4 ,4 ,4 ,4 ,4];
@@ -5154,6 +5151,7 @@ function thread(self) {
 // const MEM_SIZE = 1000;  // Memory size in 64K Pakes (512Mb)
 const MEM_SIZE = 25;  // Memory size in 64K Pakes (1600Kb)
 
+
 class Deferred {
     constructor() {
         this.promise = new Promise((resolve, reject)=> {
@@ -5168,15 +5166,14 @@ function sleep(ms) {
 }
 
 function stringToBase64(str) {
-    if (process.browser) {
+    if (process.browser && typeof globalThis.btoa === "function") {
         return globalThis.btoa(str);
     } else {
         return Buffer.from(str).toString("base64");
     }
 }
 
-const threadSource = stringToBase64("(" + thread.toString() + ")(self)");
-const workerSource = "data:application/javascript;base64," + threadSource;
+stringToBase64("(" + thread.toString() + ")(self)");
 
 
 
@@ -5209,7 +5206,6 @@ async function buildThreadManager(wasm, singleThread) {
     //    tm.pTmp1 = tm.alloc(curve.G2.F.n8*3);
 
 
-    if (singleThread) {
         tm.code = wasm.code;
         tm.taskManager = thread();
         await tm.taskManager([{
@@ -5218,65 +5214,8 @@ async function buildThreadManager(wasm, singleThread) {
             code: tm.code.slice()
         }]);
         tm.concurrency  = 1;
-    } else {
-        tm.workers = [];
-        tm.pendingDeferreds = [];
-        tm.working = [];
 
-        let concurrency;
-
-        if ((typeof(navigator) === "object") && navigator.hardwareConcurrency) {
-            concurrency = navigator.hardwareConcurrency;
-        } else {
-            concurrency = os__default["default"].cpus().length;
-        }
-
-        if(concurrency == 0){
-            concurrency = 2;
-        }
-
-        // Limit to 64 threads for memory reasons.
-        if (concurrency>64) concurrency=64;
-        tm.concurrency = concurrency;
-
-        for (let i = 0; i<concurrency; i++) {
-
-            tm.workers[i] = new Worker__default["default"](workerSource);
-
-            tm.workers[i].addEventListener("message", getOnMsg(i));
-
-            tm.working[i]=false;
-        }
-
-        const initPromises = [];
-        for (let i=0; i<tm.workers.length;i++) {
-            const copyCode = wasm.code.slice();
-            initPromises.push(tm.postAction(i, [{
-                cmd: "INIT",
-                init: MEM_SIZE,
-                code: copyCode
-            }], [copyCode.buffer]));
-        }
-
-        await Promise.all(initPromises);
-
-    }
     return tm;
-
-    function getOnMsg(i) {
-        return function(e) {
-            let data;
-            if ((e)&&(e.data)) {
-                data = e.data;
-            } else {
-                data = e;
-            }
-
-            tm.working[i]=false;
-            tm.pendingDeferreds[i].resolve(data);
-            tm.processWorks();
-        };
-    }
 
 }
 
